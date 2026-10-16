@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>留守番</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0c10;--me:#2b6cb0;--o:#232832;--fg:#d8dde6;--dim:#5b6472}
+html,body{height:100%;margin:0;background:#000;color:var(--fg);font-family:-apple-system,"Hiragino Sans",sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none}
+input{-webkit-user-select:text;user-select:text}
+#app{position:fixed;inset:0;max-width:480px;margin:0 auto;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box}
+#hd{padding:12px 16px;border-bottom:1px solid #1a1f27;text-align:center}
+#nm{font-size:16px}#sb{font-size:10px;color:var(--dim);margin-top:2px;letter-spacing:.05em}
+#log{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:8px}
+.b{max-width:78%;padding:9px 13px 6px;border-radius:16px;font-size:15px;line-height:1.5;animation:in .25s}
+.tm{display:block;font-size:10px;opacity:.5;margin-top:2px;text-align:right}
+.l{align-self:flex-start;background:var(--o)}.r{align-self:flex-end;background:var(--me)}.red{background:#4a1212;color:#fcc}
+.s{align-self:center;color:var(--dim);font-size:12px;padding:6px 0}
+.dots{letter-spacing:3px;color:var(--dim)}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+@keyframes gl{0%,100%{transform:none}20%{transform:translateX(-5px) skewX(6deg)}40%{transform:translateX(6px)}60%{transform:translateX(-3px) skewX(-6deg)}}
+.gl{animation:gl .5s 3}
+#ch{display:flex;gap:8px;padding:10px 12px;min-height:56px;border-top:1px solid #1a1f27}
+#ch button{flex:1;padding:13px 8px;border:1px solid #2b6cb0;background:none;color:#9cc4f0;border-radius:12px;font-size:15px}
+#ch input{flex:3;padding:12px;border-radius:12px;border:1px solid #2b6cb0;background:#10151c;color:#fff;font-size:16px;min-width:0}
+#cover,#call,#inc{position:fixed;inset:0;background:#000}
+#cover{z-index:9;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:24px;transition:opacity 1.5s}
+#cover h1{font-weight:300;letter-spacing:.4em;margin:0 0 14px}#cover p{line-height:1.9;font-size:15px;margin:4px 0}
+#call{display:none;z-index:8}
+#v{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);filter:brightness(.55) contrast(1.25) saturate(.3)}
+#cc{position:absolute;inset:0;width:100%;height:100%}
+#ct{position:absolute;top:max(14px,env(safe-area-inset-top));left:0;right:0;text-align:center;color:#ccc;font-size:13px;letter-spacing:.2em}
+#cap{position:absolute;bottom:max(40px,env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:#eee;font-size:18px;text-shadow:0 0 6px #000,0 0 12px #000;padding:0 20px}
+#inc{display:none;z-index:10;background:linear-gradient(#20232a,#000);flex-direction:column;align-items:center;justify-content:space-between;padding:18vh 0 12vh;text-align:center;box-sizing:border-box}
+#inc .n{font-size:30px}#inc .s2{opacity:.6;margin-top:8px}
+.rb{width:74px;height:74px;border-radius:50%;border:0;font-size:13px;color:#fff;margin:0 30px}.rd{background:#d33}.gr{background:#2c4}
+#bn{position:fixed;top:max(8px,env(safe-area-inset-top));left:10px;right:10px;max-width:460px;margin:0 auto;background:#2a2d33;border-radius:16px;padding:10px 14px;transform:translateY(-160%);transition:transform .35s;z-index:30;font-size:15px}
+#bn.on{transform:none}#bn b{display:block;font-size:12px;opacity:.7;font-weight:400}
+</style></head><body>
+<div id="bn"></div>
+<div id="app"><div id="hd"><div id="nm">お母さん</div><div id="sb">メンバー：1人</div></div><div id="log"></div><div id="ch"></div></div>
+<div id="inc"><div><div class="n" id="in">？？？</div><div class="s2" id="it">ビデオ通話</div></div><div><button class="rb rd" id="rej">拒否</button><button class="rb gr" id="ans">応答</button></div></div>
+<div id="call"><video id="v" playsinline muted autoplay></video><canvas id="cc"></canvas><div id="ct"></div><div id="cap"></div></div>
+<div id="cover"><h1>留守番</h1><p>夜、家に一人。<br>お母さんとのトークを、最後まで見てください。</p>
+<p style="color:#a66;font-size:12px;margin-top:18px">※強い恐怖表現・大きな音・振動があります。<br>心臓の弱い方、体調のすぐれない方は遊ばないでください。<br>カメラ（インカメラ）を使う場面があります（映像は保存・送信しません）。</p>
+<p id="ec" style="color:#744;font-size:12px"></p><p style="color:#5b6472;font-size:13px">暗い部屋で、イヤホンをつけて、一人でどうぞ。<br>タップで開始</p></div>
+<script>
+const $=s=>document.querySelector(s),log=$('#log'),ch=$('#ch'),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let A,out,dg,reveal=false,camP=null,bat=null,left=false,lastX=0,hes=0,c1='',uname='あなた',hbOn=false,hbRate=1100,amb=false,fear=0,named=false,callKind='answer',snap=null,opened=false,kind=0,finalC='silent';
+document.addEventListener('pointerdown',e=>lastX=e.clientX);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)left=true});
+try{navigator.getBattery&&navigator.getBattery().then(b=>bat=Math.round(b.level*100))}catch(e){}
+const vibe=p=>{try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}};
+function speak(t){try{const u=new SpeechSynthesisUtterance(t);u.lang='ja-JP';u.pitch=.1;u.rate=.5;u.volume=1;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}}
+function aud(){if(A)return;A=new(window.AudioContext||window.webkitAudioContext)();out=A.createDynamicsCompressor();out.connect(A.destination);const dr=A.createOscillator();dr.type='sawtooth';dr.frequency.value=46;const f=A.createBiquadFilter();f.frequency.value=120;dg=A.createGain();dg.gain.value=0;dr.connect(f);f.connect(dg);dg.connect(out);dr.start()}
+function tone(f,d,ty,v,f2){if(!A)return;const o=A.createOscillator(),g=A.createGain(),t=A.currentTime;o.type=ty||'sine';o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+d);g.gain.setValueAtTime(v||.2,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g);g.connect(out);o.start();o.stop(t+d+.05)}
+function noise(d,v){if(!A)return;const n=A.sampleRate*d,b=A.createBuffer(1,n,A.sampleRate),a=b.getChannelData(0);for(let i=0;i<n;i++)a[i]=(Math.random()*2-1)*(1-i/n);const s=A.createBufferSource(),g=A.createGain();g.gain.value=v;s.buffer=b;s.connect(g);g.connect(out);s.start()}
+const ding=()=>{tone(1319,.5,'sine',.15);setTimeout(()=>tone(988,.7,'sine',.15),180)};
+const thud=v=>tone(80,.2,'sine',v||.5,35),tension=v=>{if(dg)dg.gain.value=v};
+const doorbell=()=>{tone(784,.7,'sine',.5);setTimeout(()=>tone(622,1.1,'sine',.5),650)};
+function ambient(){if(!amb)return;const r=Math.random();if(r<.45)tone(190,.8,'sawtooth',.04,110);else if(r<.8)tone(60,.5,'sine',.25,30);else noise(.5,.04);setTimeout(ambient,4500+Math.random()*6000)}
+(function hl(){if(hbOn)thud(.28);setTimeout(hl,hbRate)})();
+const now=()=>{const n=new Date();return n.getHours()+':'+String(n.getMinutes()).padStart(2,'0')};
+function add(side,txt){const d=document.createElement('div');d.className='b '+side;d.innerHTML='<span></span><span class="tm"></span>';d.firstChild.textContent=txt;d.lastChild.textContent=(side==='r'?'既読 ':'')+now();log.appendChild(d);log.scrollTop=1e5;return d}
+function sys(t){const d=document.createElement('div');d.className='s';d.textContent=t;log.appendChild(d);log.scrollTop=1e5}
+function banner(a,b){const e=$('#bn');e.innerHTML='<b>'+a+'</b>'+b;e.classList.add('on');ding();vibe([150]);setTimeout(()=>e.classList.remove('on'),3800)}
+async function mom(txt,w){const d=add('l dots','・・・');d.lastChild.textContent='';await sleep(w||1200);d.className='b l'+(reveal?' red':'');d.firstChild.textContent=txt;d.lastChild.textContent=now();if(reveal){thud(.4);vibe([60])}else{ding();vibe([40])}log.scrollTop=1e5;await sleep(reveal?1300:900)}
+async function ghost(txt){const d=add('l dots','・・・');d.lastChild.textContent='';await sleep(2400);d.style.display='none';await sleep(1500);d.style.display='';await sleep(1800);d.className='b l red';d.firstChild.textContent=txt;d.lastChild.textContent=now();thud(.5);vibe([80]);await sleep(1500)}
+function forceMe(txt){add('r',txt);thud(.6);vibe([200]);return sleep(1800)}
+function choose(a){return new Promise(r=>{ch.innerHTML='';const t0=performance.now();a.forEach(t=>{const b=document.createElement('button');b.textContent=t;b.onclick=()=>{hes=(performance.now()-t0)/1000;ch.innerHTML='';add('r',t);r(t)};ch.appendChild(b)})})}
+function askName(){return new Promise(r=>{ch.innerHTML='';const i=document.createElement('input');i.placeholder='名前（ニックネームでも）';i.maxLength=12;const b=document.createElement('button');b.textContent='送信';const send=()=>{named=!!i.value.trim();const n=i.value.trim()||'あなた';ch.innerHTML='';add('r',n);r(n)};b.onclick=send;i.onkeydown=e=>{if(e.key==='Enter')send()};ch.append(i,b)})}
+function face(g,cx,cy,s,a,eyes,rot){g.save();g.globalAlpha=a;g.translate(cx,cy);g.rotate(rot||0);g.fillStyle='#050505';g.beginPath();g.ellipse(0,s*.1,s*.62,s*.95,0,0,7);g.fill();g.fillStyle='#d9d4c7';g.beginPath();g.ellipse(0,0,s*.5,s*.7,0,0,7);g.fill();g.fillStyle='#000';g.beginPath();g.ellipse(-s*.2,-s*.12,s*.11,s*.17,0,0,7);g.ellipse(s*.2,-s*.12,s*.11,s*.17,0,0,7);g.fill();g.beginPath();g.ellipse(0,s*.38,s*.17,s*.26,0,0,7);g.fill();if(eyes){g.fillStyle='#fff';g.beginPath();g.arc(-s*.2,-s*.12,s*.025,0,7);g.arc(s*.2,-s*.12,s*.025,0,7);g.fill()}g.restore()}
+const ss=(a,b,x)=>{x=Math.max(0,Math.min(1,(x-a)/(b-a)));return x*x*(3-2*x)};
+async function run(){
+let h3=0,c3='';const hm=now();
+await sleep(800);tension(.04);amb=true;setTimeout(ambient,6000);
+await mom('お疲れさま。今日、残業で遅くなりそう');
+await mom('ご飯、冷蔵庫にカレーあるから温めて食べてね');
+const f=await choose(['食べた','まだ食べてない']);await sleep(900);
+await mom(f==='食べた'?'えらいえらい。ちゃんと食べてて安心':'お腹すいたでしょ。先に食べてていいよ');
+await mom('戸締まり、ちゃんとしてる？');
+c1=await choose(['してる','まだ']);await sleep(900);
+await mom(c1==='まだ'?'すぐしてね。夜は特に':'うん、ありがとう');
+await sleep(1500);
+await mom('もし誰か来ても、絶対に開けちゃだめだよ');
+await mom('お母さんは帰ったら、必ず「ただいま」って言うから');
+await mom('言わない人は、お母さんじゃないからね',1500);
+await sleep(3000);tension(.08);
+await mom('もうすぐ着くよ',1000);
+await sleep(4000);
+await mom('もうすぐ着くよ',900);
+await sleep(2800);
+doorbell();vibe([300]);sys('ピンポーン');tension(.15);await sleep(2600);
+await mom('え？ 今の、うち？',900);
+await mom('お母さん、まだ電車の中だよ',1200);
+c3=await choose(['誰か来た','怖い']);h3=hes;if(c3==='怖い')fear++;await sleep(1400);
+await mom('出ちゃだめ。そのまま、静かにしてて',1300);
+noise(.3,.3);vibe([100,60,100]);sys('ガチャ…　ガチャ…');await sleep(2400);
+sys('（インターホン）「……あけて」');tone(120,1,'sawtooth',.15);tension(.22);await sleep(3000);
+await mom('開けてないよね？',1000);
+const dr=await choose(['開けてない','……開けた']);
+if(dr==='……開けた'){opened=true;await sleep(1200);noise(.3,.3);vibe([80,50,80]);sys('ガチャ…　ギィ…');await sleep(2200);await mom('え……開けたの？',1400);await mom('いますぐ、鍵かけて！',1100);await sleep(3200);sys('…………');await sleep(2200);steps();sys('（足音）');await sleep(3200)}
+else await sleep(1800);
+sys('…………');await sleep(3800);tension(.05);
+sys('静かになった');await sleep(3000);
+await mom('…帰ったみたい',1800);
+await mom('ごめんね、一人にして。もう大丈夫だよ',1500);
+await sleep(3800);
+await mom('窓は閉まってる？',1300);
+await choose(['閉まってる','見てくる']);await sleep(1400);
+await mom('カーテンも',1000);
+await mom('うしろのドアも',1200);
+tension(.12);
+await choose(['うしろ？','え、なに？']);await sleep(1600);
+await mom('ごめん、言い間違い',1300);
+await sleep(2600);
+await mom(bat!=null?'ていうか電池、あと'+bat+'%しかないじゃん。充電しな':'ていうか、画面ちっちゃいね。もう少し近づいて見な',1600);
+tension(.18);
+await choose(['なんで分かるの？','え？']);await sleep(1800);
+await mom('分かるよ');
+await mom('だって',1800);
+tension(.25);await mom('いま、見てるもん',2200);
+await sleep(2200);
+reveal=true;noise(.5,.5);thud(.9);vibe([400]);
+const nm=$('#nm'),sb=$('#sb');nm.textContent='？？？';sb.textContent='見ている人：1人（あなたの前に）';sb.style.color='#c33';
+nm.classList.add('gl');tension(.3);hbOn=true;hbRate=1300;await sleep(2400);
+await mom('お母さんじゃないよ。最初から',1700);
+await mom('さっき、インターホンを鳴らしたの、私',1900);
+if(opened){await mom('ドア、開けてくれたよね',1800);await mom('ありがとう。やさしいんだね',1900);await mom('だから、お礼に',1700);await mom('ちゃんと、会いに行くね',1900)}
+else{await mom('ドアは、開けてくれなかったから',1800);await mom('だから、こっちから来たの',1900)}
+await sleep(1500);
+await mom('いま、この画面を見てる、あなたのところに',2200);
+await mom('画面の中の誰かじゃなくて',1500);
+await mom('画面の前の、あなた',2000);
+await sleep(2600);tension(.4);
+await mom('さっき、「'+c3+'」って選ぶまでに、'+h3.toFixed(1)+'秒かかったね',2000);
+const dev=/iPhone|iPad/.test(navigator.userAgent)?'iPhone':/Android/.test(navigator.userAgent)?'Android':'パソコン';
+await mom(dev+'で、'+(lastX>innerWidth/2?'右':'左')+'側の指で触ってるね',2000);
+if(left)await mom('さっき、他の画面に逃げようとしたでしょ',1800);
+await mom('いま'+hm+'。こんな時間に、ひとりなんだ',2000);
+await sleep(2000);
+await mom('ねえ',1500);
+await mom('名前、教えて',1700);
+uname=await askName();await sleep(2200);
+await ghost('……'+uname);speak(uname);await sleep(1200);
+await mom('いい名前',1500);
+if(opened){await mom('いま、そっちに行くからね',2200);callKind='opened';await finale();return}
+tension(.5);hbRate=950;await sleep(1500);
+await mom(uname+'、いま、うしろが気になってるでしょ',2000);
+await mom('見ちゃだめ',1500);
+await sleep(2400);
+await forceMe('うしろにいる');
+await mom('それ、私が送ったの',1800);
+await mom(uname+'の指で',1800);
+await sleep(1800);
+await forceMe('たすけて');
+await ghost('だれに？');
+await sleep(2600);
+await mom('…ごめんね',1800);
+await mom('こわがらせたい、わけじゃないの',2100);
+await mom('ずっと、帰る場所を探してたの',2100);
+await mom('「ただいま」って言っても',1800);
+await mom('だれも、「おかえり」って言ってくれなかった',2500);
+await sleep(1800);
+await mom('ねえ、さびしいって、わかる？',2100);
+const k1=await choose(['さびしかったんだね','やめて、怖い','消えて']);
+if(k1==='さびしかったんだね'){kind++;await sleep(1400);await mom('……うん',2200)}
+else if(k1==='消えて'){await sleep(1400);await mom('……そう',2000);await mom('みんな、そう言うの',2200)}
+else{await sleep(1400);await mom('ごめんね。でも、ここ、あったかいから',2400)}
+await sleep(1800);
+await mom('この家ね、ご飯のにおいがしたの',2100);
+await mom('カレー、おいしそうだったな',2200);
+const k2=await choose(['食べていいよ','……','近づかないで']);
+if(k2==='食べていいよ'){kind++;await sleep(1400);await mom('……ほんと？',1900);await mom('うれしい',2400)}
+else if(k2==='近づかないで'){await sleep(1400);await mom('…うん。わかった',2200)}
+else await sleep(1800);
+await sleep(2200);tension(.4);
+banner('？？？','顔、見せて');
+await sleep(2400);
+callKind=await incoming();if(callKind!=='answer')await finale();else await call()}
+function incoming(){return new Promise(res=>{const el=$('#inc');el.style.display='flex';amb=false;tension(.2);let on=true;
+const ring=()=>{if(!on)return;tone(880,.25,'sine',.3);setTimeout(()=>tone(660,.25,'sine',.3),300);setTimeout(()=>tone(880,.25,'sine',.3),600);vibe([500,250,500]);setTimeout(ring,2000)};ring();
+const end=(txt,ms,k)=>{on=false;$('#it').textContent=txt;setTimeout(()=>{el.style.display='none';res(k)},ms)};
+const go=(txt,k)=>{if(!on)return;if(k==='answer'&&navigator.mediaDevices)camP=navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}}).catch(()=>null);end(txt,1600,k)};
+$('#ans').onclick=()=>go('接続中…','answer');$('#rej').onclick=()=>go('拒否できないよ','reject');
+setTimeout(()=>{if(on)end('出ないなら、行くね',2000,'ignore')},15000)})}
+async function call(){
+let st=camP?await camP:null;
+const cl=$('#call'),v=$('#v'),cc=$('#cc'),ct=$('#ct'),cap=$('#cap');cl.style.display='block';
+if(st){v.srcObject=st;try{await v.play()}catch(e){}}else v.style.display='none';
+const W=cc.width=innerWidth,H=cc.height=innerHeight,g=cc.getContext('2d'),t0=performance.now();
+tension(.4);hbOn=true;hbRate=1100;
+const caps=[[1,st?'……':'画面、黒いでしょ。そこに映ってるの、あなたの顔'],[3.2,uname+'、ちゃんと見えるよ'],[8,'ねえ、'+uname],[10.4,'いま、いたよ'],[13,'見えた？'],[15.5,'……'],[17.2,'ただいま。']];
+const blinks=[[6,.3,.86,.42,.07],[9.2,.35,.14,.46,.11],[12.2,.4,.62,.4,.17]];
+let ci=0,said=0,phase=0,ts=0,picked=null,ended=false;
+const cb=document.createElement('div');cb.style.cssText='position:absolute;left:0;right:0;bottom:max(24px,env(safe-area-inset-bottom));display:none;flex-direction:column;gap:10px;padding:0 24px;max-width:480px;margin:0 auto;z-index:3;box-sizing:border-box';
+function pick(k){if(picked)return;picked=k;finalC=k;cb.remove();ts=performance.now();if(k==='welcome'){phase=4;cap.textContent='';hbRate=1900;tension(.1)}else{phase=1;cap.textContent='';hbOn=false;tension(0)}}
+[['おかえり','welcome'],['……（何も言わない）','silent'],['出ていけ','drive']].forEach(([tx,k])=>{const b=document.createElement('button');b.textContent=tx;b.style.cssText='padding:14px;border:1px solid #666;background:rgba(0,0,0,.6);color:#ddd;border-radius:12px;font-size:16px';b.onclick=()=>pick(k);cb.appendChild(b)});cl.appendChild(cb);
+const fig=t=>{const p=ss(14,28,t);face(g,W*(.78-.3*p)+Math.sin(t*2)*3,H*(.42+.06*p),H*(.14+.26*p),.72*(Math.random()<.03?.3:1),true,.12)};
+const end=()=>{ended=true;hbOn=false;if(st)st.getTracks().forEach(x=>x.stop());finale()};
+(function fr(){const t=(performance.now()-t0)/1000,n=performance.now();g.clearRect(0,0,W,H);
+if(phase===0||phase===3){
+ct.textContent='？？？　通話中 0:'+String(Math.floor(t)).padStart(2,'0');
+if(ci<caps.length&&t>caps[ci][0]){cap.textContent=caps[ci][1];ci++}
+if(said<1&&t>3.5){said=1;speak(uname+'、みえてるよ')}
+if(said<2&&t>17.2){said=2;speak('ただいま')}
+if(phase===0){hbRate=1100-ss(3,20,t)*600;blinks.forEach(b=>{if(t>b[0]&&t<b[0]+b[1])face(g,W*b[2],H*b[3],H*b[4],.6,true,.1)})}
+if(t>14)fig(t);
+if(phase===0&&t>=19.5){phase=3;ts=n;cap.textContent='「ただいま」って言ったら、なんて返してくれる？';cb.style.display='flex';
+if(st&&v.videoWidth){try{const tc=document.createElement('canvas');tc.width=v.videoWidth;tc.height=v.videoHeight;const x=tc.getContext('2d');x.translate(tc.width,0);x.scale(-1,1);x.drawImage(v,0,0);snap=tc.toDataURL('image/jpeg',.7)}catch(e){}}}
+else if(phase===3&&n-ts>14000)pick('silent');
+}else if(phase===1){const s=(n-ts)/1000;g.fillStyle='#000';g.fillRect(0,0,W,H);
+if(finalC==='drive'){if(s>1.8){phase=2;ts=n;noise(1.8,.9);tone(300,1.5,'sawtooth',.5,900);thud(1);vibe([700])}}
+else{const p=Math.min(1,s/4);face(g,W*.5,H*.5,H*(.5+p*.9),.15+.8*p,true,0);if(s>4.4)end()}
+}else if(phase===2){const s=(n-ts)/1000;if(s<1.7){const sh=(1.7-s)*14;g.fillStyle='#200';g.fillRect(0,0,W,H);g.save();g.translate((Math.random()-.5)*sh,(Math.random()-.5)*sh);face(g,W/2,H*.5,Math.max(W,H)*(.4+ss(0,.45,s)*.9+s*.12),1,true,.05);g.restore()}else{g.fillStyle='#000';g.fillRect(0,0,W,H);end()}
+}else if(phase===4){const s=(n-ts)/1000;g.fillStyle='rgba(255,190,110,'+Math.min(.18,s*.05)+')';g.fillRect(0,0,W,H);if(s<4)face(g,W*.5,H*.45,H*.35,.7*(1-s/4),true,0);if(s>4.6)end()}
+if(!ended)requestAnimationFrame(fr)})()}
+const ENDS=['ただいま','ずっと、いっしょ','毎晩、三時','すりかわり','開いたドア','不在着信','逃げ場なし','もらうね'];
+const TYPES=['ハッピー','ビター','バッド','バッド','バッド','バッド','バッド','バッド'];
+const HINTS=['相手の寂しさに寄り添い、最後に迎える言葉を返す','迎える言葉は返した。でも、相手の話にはあまり寄り添わなかった','最後に何も言わなかった（カメラは許可していない）','最後に、拒絶の言葉を返してしまった','ドアの向こうの声に、応えてしまった','かかってきた通話に、応じなかった','途中で画面から離れ、最後に相手を迎え入れなかった','最後に何も言わず、カメラも許可した'];
+function loadE(){try{return JSON.parse(localStorage.getItem('rsb2')||'[]')}catch(e){return[]}}
+function saveE(n){try{const a=loadE();if(!a.includes(n)){a.push(n);localStorage.setItem('rsb2',JSON.stringify(a))}}catch(e){}}
+$('#ec').textContent='エンディング 8種類　達成 '+loadE().length+' / 8';
+function pickEnding(){if(opened)return 5;if(callKind!=='answer')return 6;if(left&&finalC!=='welcome')return 7;if(finalC==='drive')return 4;if(finalC==='welcome')return kind>=2?1:2;return snap?8:3}
+function steps(){if(!A)return;const p=A.createStereoPanner();p.pan.value=-.9;p.connect(out);for(let k=0;k<7;k++)setTimeout(()=>{const o=A.createOscillator(),g=A.createGain(),t=A.currentTime;o.frequency.setValueAtTime(60,t);o.frequency.exponentialRampToValueAtTime(30,t+.15);g.gain.setValueAtTime(.35+k*.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.connect(g);g.connect(p);o.start();o.stop(t+.25);p.pan.value=-.9+k*.15},k*800)}
+function ringB(){if(!A)return;const p=A.createStereoPanner();p.pan.value=-.9;p.connect(out);for(let k=0;k<8;k++)setTimeout(()=>{const o=A.createOscillator(),g=A.createGain(),t=A.currentTime;o.frequency.value=k%2?660:880;g.gain.setValueAtTime(.35,t);g.gain.exponentialRampToValueAtTime(.001,t+.25);o.connect(g);g.connect(p);o.start();o.stop(t+.3)},k*320)}
+async function finale(){
+const id=pickEnding(),c=$('#call');c.style.display='block';c.style.background='#000';c.style.transition='background 4s';hbOn=false;tension(0);
+c.innerHTML='<div id="fin" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:24px"></div>';const f=$('#fin');
+const U=uname.replace(/</g,'');
+const say=async(h,w,col,st)=>{const p=document.createElement('p');p.style.cssText='opacity:0;transition:opacity 1.6s;line-height:1.9;margin:10px 0;color:'+(col||'#9aa')+';'+(st||'');p.innerHTML=h;f.appendChild(p);await sleep(60);p.style.opacity=1;await sleep(w)};
+const bub=async(side,txt,w)=>{const d=document.createElement('div');d.className='b '+side;d.style.cssText='opacity:0;transition:opacity 1s;max-width:80%;text-align:left;'+(side==='r'?'align-self:flex-end':'align-self:flex-start');d.textContent=txt;f.appendChild(d);await sleep(60);d.style.opacity=1;if(side==='l')ding();else tone(700,.2,'sine',.1);await sleep(w||2200)};
+const chime=()=>[523,659,784,1047].forEach((q,i)=>setTimeout(()=>tone(q,1.6,'sine',.18),i*260));
+const card=async n=>{f.innerHTML='';const col=n===1?'#fda':n===2?'#c88':'#733';await say('ENDING '+n+' / 8',1400,col,'font-size:12px;letter-spacing:.3em');await say('「'+ENDS[n-1]+'」',3000,n===1?'#fda':'#ddd','font-size:24px;letter-spacing:.2em');await say(n===1?'HAPPY END':n===2?'BITTER END':'BAD END',2200,col,'font-size:12px;letter-spacing:.3em');await sleep(800);f.innerHTML=''};
+const L={
+1:async()=>{c.style.background='#1a1209';
+await sleep(2500);await say('……おかえり、って',3000,'#fda');await say('はじめて、言ってもらえた',3600,'#fda');
+await say('ずっと、さがしてたの。<br>「ただいま」って言える、場所',4600,'#fda');
+await say('ありがとう。やさしいんだね',3800,'#fda');await say('カレー、おいしそうだったな',3600,'#fda');
+await say('もう、行くね',3600,'#fda');chime();vibe([80]);await sleep(4500);
+f.innerHTML='';await sleep(1800);
+tone(200,.15,'square',.12);setTimeout(()=>tone(150,.2,'square',.12),200);
+await say('——ガチャ。',2800,'#bbb');
+banner('お母さん','ただいま！ 遅くなってごめんね');vibe([100,80,100]);
+await say('「ただいまー」',3400,'#fff','font-size:24px');
+await say('玄関から、聞きなれた声がした。',4200,'#ddd');
+await say('今度は、ちゃんと、お母さんの声。',4400,'#ddd');
+await say('キッチンのカレーは、<br>ほんの少しだけ、減っていた。',5200,'#fda');
+await say('あたたかい夜だった。',4200,'#fda')},
+2:async()=>{await sleep(1500);
+await say('……おかえり、って',3000,'#fda');await say('言って、くれたね',3000,'#fda');await say('うれしい',2800,'#fda');
+await say('でも、さっきは、こわがってたよね',3800,'#bbb');await say('ううん、いいの',2800,'#bbb');
+await say('ここに、いていいんだよね',3600,'#c88');await say('もう、どこにも行かない',3600,'#c88');
+await say(U+'の、そばにいる',3400,'#c88');await say('あしたも、あさっても',3200,'#c88');
+await say('ずっと、いっしょ',5200,'#c33')},
+3:async()=>{await sleep(1500);
+await say('……そっか',2600,'#bbb');await say('なにも、言ってくれないんだね',3400,'#bbb');
+await say('だいじょうぶ',2600,'#c88');await say('待つのは、慣れてるから',3600,'#c88');
+await say('あしたも、くるね',3000,'#c88');await say('あさっても',2400,'#c88');
+await say('毎晩、三時三分に',3800,'#c33');await say('玄関の前で、「ただいま」って言うよ',4200,'#c33');
+await say('だれかが、「おかえり」って言ってくれる日まで',4600,'#833')},
+4:async()=>{await sleep(1500);
+await say('……また、だめだった',3200,'#c88');await say('どこに行っても、おいだされる',3400,'#c88');
+await say('じゃあ、いいよ',2600,'#bbb');await say(U+'に、なるね',3600,'#c33');
+f.innerHTML='';await sleep(1200);f.style.alignItems='stretch';
+await bub('l','ただいま',2200);await bub('r','おかえり',2600);
+await bub('l','あれ、起きてたの。今日は、ちゃんと言ってくれるのね',3400);
+await bub('r','うん。ずっと、言いたかったから',3200);
+await bub('l','…なんだか、声、変わった？',3400);
+await bub('r','ううん。なにも、変わってないよ',3600);
+await sleep(1500);f.style.alignItems='center';f.innerHTML='';
+await say('それは、ようやく、家に帰れた。',3800,'#bbb');
+await say('本物の'+U+'は、画面の向こうで、<br>もう、声が出ない。',4800,'#c33')},
+5:async()=>{f.innerHTML='';await sleep(800);
+await say('階段を、のぼる音。',3200,'#aaa');steps();await sleep(5000);
+await say('ギシ…　ギシ…',2500,'#888');
+await say(U+'の部屋の、ドアの前で、止まった。',3800,'#c88');
+noise(.2,.4);thud(.8);vibe([200]);await say('コン、コン。',3000,'#ddd');
+await say('ねえ、ドア、あけて',3200,'#c33');await say('だいじょうぶ',2400,'#c88');
+await say('さっきは、'+U+'が、あけてくれたでしょ',3600,'#c88');await say('今度も、あけて',3400,'#c33');
+hbOn=true;hbRate=420;tension(.3);await sleep(5000);
+hbOn=false;tension(0);f.innerHTML='';await sleep(2600);
+noise(1.8,.9);tone(300,1.4,'sawtooth',.5,900);thud(1);vibe([800]);
+await say('ただいま',3800,'#a00','font-size:44px;letter-spacing:.3em')},
+6:async()=>{await sleep(1500);
+await say(callKind==='reject'?'拒否、したね。':'出て、くれなかったね。',3200,'#bbb');
+const p=document.createElement('p');p.style.cssText='color:#c33;font-size:26px;margin:10px';f.appendChild(p);
+for(let i=1;i<=47;i++){p.textContent='不在着信 '+i;if(i%6===0)vibe([60]);await sleep(Math.max(40,200-i*4))}
+await sleep(1200);await say('つながらないと、かけ直したくなるよね',3800,'#c88');
+await say('つながるまで、かけるよ',3200,'#c88');await say('何度でも',3000,'#c33');
+await say('かけてるのは、画面の中からじゃない',3800,'#bbb');await say('この部屋の中から',3400,'#c33');
+ringB();await sleep(2600);await say('ほら、聞こえるでしょ',3200,'#833');
+await say(U+'の、うしろで、鳴ってる',4600,'#833');banner('不在着信 48件','？？？');await sleep(2500)},
+7:async()=>{document.title='？？？';await sleep(1500);
+await say('途中で、この画面から、目をそらしたよね',3800,'#bbb');await say('逃げたの？',2600,'#c88');
+await say('いいよ。見てたから',3200,'#c88');await say('ホーム画面にも',2200,'#c88');banner('？？？','ここだよ');
+await say('ロック画面にも',2200,'#c88');await say('バックグラウンドにも、いたよ',3400,'#c33');
+await say('電源を切っても、ね',3400,'#c33');await say('これは、画面の中だけの話じゃないから',4200,'#833');
+await say('いま、玄関の前に、いる',4500,'#a00')},
+8:async()=>{await sleep(1500);
+await say('……そっか',2600,'#bbb');await say('なにも、言ってくれないんだね',3400,'#bbb');
+await say('それなら、これ、もらうね',3400,'#c88');
+await new Promise(res=>{const im=new Image();im.onerror=()=>res();im.onload=()=>{const w=Math.min(innerWidth*.8,340),h=w*im.height/im.width,cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.style.cssText='border-radius:8px;margin-bottom:10px';const g=cv.getContext('2d');const draw=a=>{g.filter='grayscale(1) contrast(1.3) brightness(.7)';g.drawImage(im,0,0,w,h);g.filter='none';if(a>0)face(g,w*.5,h*.42,h*.55,a,true,0)};draw(0);f.appendChild(cv);let a=0;setTimeout(()=>{const iv=setInterval(()=>{a+=.012;draw(Math.min(a,.5));if(a>=.5)clearInterval(iv)},60)},1800);setTimeout(res,3500)};im.src=snap});
+await say('ずっと、自分の顔が、きらいだったの',4200,'#c88');
+await say('でも、'+U+'の顔なら、<br>きっと、だれも怖がらない',4600,'#c33');
+await say('あした、鏡を見てみて',3800,'#c33');await say('だれが、映ってるかな',4800,'#833')}
+};
+await L[id]();saveE(id);await sleep(1500);await card(id);
+if(id===1){await say('おやすみなさい。',5000,'#fda')}
+else if(id===2){await say('おしまい',4000,'#333','font-size:13px');banner('？？？','おやすみ、'+U+'。また、あしたね');await sleep(4500)}
+else if(id===3||id===7){await say('おしまい',7000,'#333','font-size:13px');doorbell();vibe([300,150,300,150,700]);banner('？？？','ただいま');await sleep(3000);speak('ただいま');await sleep(4500)}
+const a=loadE();
+const rows=ENDS.map((e,i)=>{const u=a.includes(i+1);return '<tr style="'+(i+1===id?'background:#1a1010;':'')+'"><td style="color:#777">'+(i+1)+'</td><td style="color:'+(u?'#ddd':'#555')+'">'+(u?e:'？？？')+'</td><td style="color:'+(u?(i===0?'#fda':i===1?'#c88':'#a66'):'#555')+'">'+(u?TYPES[i]:'？')+'</td><td style="color:#8a9a8a">'+HINTS[i]+'</td></tr>'}).join('');
+c.innerHTML='<div style="position:absolute;inset:0;overflow-y:auto;padding:max(24px,env(safe-area-inset-top)) 14px 48px;box-sizing:border-box"><div style="max-width:560px;margin:0 auto;color:#aaa"><p style="text-align:center;font-size:15px;letter-spacing:.2em;margin:8px 0 4px">エンディング一覧</p><p style="text-align:center;font-size:12px;color:#966;margin:0 0 16px">達成 '+a.length+' / 8</p><table style="width:100%;border-collapse:collapse;font-size:12px;line-height:1.7"><thead><tr style="color:#666;text-align:left"><th style="padding:6px">#</th><th>タイトル</th><th>種類</th><th>解放条件のヒント</th></tr></thead><tbody>'+rows.replace(/<td style="/g,'<td style="padding:9px 6px;border-bottom:1px solid #222;')+'</tbody></table><p style="text-align:center;margin-top:28px"><button id="again" style="padding:13px 28px;border:1px solid #555;background:none;color:#ccc;border-radius:12px;font-size:15px">もう一度遊ぶ</button></p></div></div>';
+$('#again').onclick=()=>location.reload()}
+$('#cover').onclick=function(){aud();A.resume();this.onclick=null;this.style.opacity=0;setTimeout(()=>this.style.display='none',1500);run()};
+</script></body></html>
